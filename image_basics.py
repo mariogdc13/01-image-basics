@@ -50,7 +50,7 @@ def load_image(img_path, is_label_img):
     #  else use outputPixelType=sitk.sitkFloat32
     """
     pixel_type = sitk.sitkUInt8 if is_label_img else sitk.sitkFloat32
-    img = sitk.ReadImage(img_path, outputPixelType=pixel_type)
+    img = sitk.ReadImage(str(img_path), outputPixelType=pixel_type)
 
     return img
 
@@ -89,14 +89,10 @@ def preprocess_rescale_numpy(np_img, new_min_val, new_max_val):
     min_val = np_img.min()
 
     if max_val == min_val:
-        rescaled_np_img = np.full(np_img.shape, new_min_val, dtype=float)
-    else:
-        rescaled_np_img = (
-            (np_img - min_val)
-            / (max_val - min_val)
-            * (new_max_val - new_min_val)
-            + new_min_val
-        )
+        return np.full(np_img.shape, new_min_val, dtype=np.float64)
+    values = np_img.astype(np.float64)
+    rescaled_np_img = ((values - min_val) / (float(max_val) - float(min_val))
+                       * (new_max_val - new_min_val) + new_min_val)
 
     return rescaled_np_img
 
@@ -107,11 +103,7 @@ def preprocess_rescale_sitk(img, new_min_val, new_max_val):
     # todo: rescale the intensities of the img to the range [new_min_val, new_max_val]
     # (hint: RescaleIntensity)
     """
-    rescaled_img = sitk.RescaleIntensity(
-        img,
-        outputMinimum=new_min_val,
-        outputMaximum=new_max_val,
-    )
+    rescaled_img = sitk.RescaleIntensity(img, new_min_val, new_max_val)
 
     return rescaled_img
 
@@ -126,18 +118,13 @@ def register_images(img, label_img, atlas_img):
     registration_method = _get_registration_method(
         atlas_img, img
     )  # type: sitk.ImageRegistrationMethod
-    transform = registration_method.Execute(atlas_img, img)
+    transform = registration_method.Execute(fixed=atlas_img, moving=img)
 
     # todo: apply the obtained transform to register the image (img) to the atlas image (atlas_img)
     # hint: 'Resample' (with referenceImage=atlas_img, transform=transform, interpolator=sitkLinear,
     # defaultPixelValue=0.0, outputPixelType=img.GetPixelIDValue())
     registered_img = sitk.Resample(
-        img,
-        atlas_img,
-        transform,
-        sitk.sitkLinear,
-        0.0,
-        img.GetPixelIDValue(),
+        img, atlas_img, transform, sitk.sitkLinear, 0.0, img.GetPixelIDValue()
     )
 
     # todo: apply the obtained transform to register the label image (label_img) to the atlas image (atlas_img), too
@@ -145,12 +132,8 @@ def register_images(img, label_img, atlas_img):
     # hint: 'Resample' (with interpolator=sitkNearestNeighbor, defaultPixelValue=0.0,
     # outputPixelType=label_img.GetPixelIDValue())
     registered_label = sitk.Resample(
-        label_img,
-        atlas_img,
-        transform,
-        sitk.sitkNearestNeighbor,
-        0.0,
-        label_img.GetPixelIDValue(),
+        label_img, atlas_img, transform, sitk.sitkNearestNeighbor,
+        0.0, label_img.GetPixelIDValue()
     )
 
     return registered_img, registered_label
@@ -173,8 +156,8 @@ def postprocess_largest_component(label_img):
     """
     connected_components = sitk.ConnectedComponent(label_img)
 
-    # todo: order the component by ascending component size (hint: 'RelabelComponent')
-    relabeled_components = sitk.RelabelComponent(connected_components)
+    # Sort by decreasing size so label 1 identifies the largest component.
+    relabeled_components = sitk.RelabelComponent(connected_components, sortByObjectSize=True)
 
     largest_component = relabeled_components == 1  # zero is background
     return largest_component
